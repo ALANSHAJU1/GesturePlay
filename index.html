@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GesturePlay | Touchless Video Controller</title>
+
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+            padding: 30px 16px;
+            font-family: Arial, sans-serif;
+            background: #10131c;
+            color: #f5f5f5;
+        }
+
+        .container {
+            max-width: 900px;
+            margin: auto;
+        }
+
+        h1 {
+            margin-bottom: 8px;
+        }
+
+        .subtitle {
+            color: #aeb7ca;
+            margin-bottom: 24px;
+        }
+
+        .url-bar {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 16px;
+        }
+
+        input {
+            flex: 1;
+            min-width: 0;
+            padding: 12px;
+            border-radius: 8px;
+            border: 1px solid #42495a;
+            background: #1a2030;
+            color: white;
+        }
+
+        button {
+            padding: 11px 15px;
+            border: 0;
+            border-radius: 8px;
+            cursor: pointer;
+            background: #4659e8;
+            color: white;
+            font-size: 14px;
+        }
+
+        button:hover {
+            filter: brightness(1.15);
+        }
+
+        #player {
+            width: 100%;
+            aspect-ratio: 16 / 9;
+            background: black;
+            border-radius: 12px;
+            overflow: hidden;
+        }
+
+        #player iframe {
+            width: 100%;
+            height: 100%;
+        }
+
+        .panel {
+            background: #1a2030;
+            padding: 18px;
+            margin-top: 18px;
+            border-radius: 12px;
+        }
+
+        .controls {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-top: 12px;
+        }
+
+        #status {
+            color: #ffd166;
+        }
+
+        #lastAction {
+            color: #aeb7ca;
+        }
+
+        #player.player-expanded {
+            position: fixed;
+            inset: 0;
+            width: 100vw;
+            height: 100vh;
+            aspect-ratio: auto;
+            border-radius: 0;
+            overflow: hidden;
+            background: black;
+            z-index: 99999;
+        }
+
+        #player.player-expanded iframe {
+            width: 100%;
+            height: 100%;
+            border-radius: 0;
+        }
+
+        .hint {
+            color: #aeb7ca;
+            line-height: 1.7;
+            font-size: 14px;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <h1>GesturePlay</h1>
+        <p class="subtitle">
+            Control YouTube using hand gestures.
+        </p>
+
+        <div class="url-bar">
+            <input id="videoUrl" type="text" placeholder="Paste a YouTube video URL"
+                value="https://www.youtube.com/watch?v=M7lc1UVf-VE">
+            <button id="loadButton">Load video</button>
+        </div>
+
+        <div id="player"></div>
+
+        <div class="panel">
+            <strong>Connection:</strong>
+            <span id="status">Connecting...</span>
+
+            <p id="lastAction">Waiting for a gesture...</p>
+
+            <div class="controls">
+                <button id="backButton">−10 seconds</button>
+                <button id="playButton">Play / Pause</button>
+                <button id="forwardButton">+10 seconds</button>
+                <button id="volumeDown">Volume −</button>
+                <button id="volumeUp">Volume +</button>
+                <button id="fullscreenButton">Full screen</button>
+            </div>
+        </div>
+
+        <div class="panel">
+            <strong>Gesture guide</strong>
+            <p class="hint">
+                Swipe right: forward 10 seconds<br>
+                Swipe left: rewind 10 seconds<br>
+                Use the buttons to test playback before enabling gestures.
+            </p>
+        </div>
+    </div>
+
+    <script>
+        let player;
+        let playerReady = false;
+        let socket;
+
+        const statusElement = document.getElementById("status");
+        const actionElement = document.getElementById("lastAction");
+
+        // Load the official YouTube IFrame Player API.
+        const tag = document.createElement("script");
+        tag.src = "https://www.youtube.com/iframe_api";
+        document.head.appendChild(tag);
+
+        // YouTube calls this function when its API is ready.
+        window.onYouTubeIframeAPIReady = function () {
+            player = new YT.Player("player", {
+                videoId: getVideoId(
+                    document.getElementById("videoUrl").value
+                ),
+                playerVars: {
+                    playsinline: 1
+                },
+                events: {
+                    onReady: function () {
+                        playerReady = true;
+                        console.log("YouTube player ready");
+                    },
+                    onError: function (event) {
+                        actionElement.textContent =
+                            "YouTube player error: " + event.data;
+                    }
+                }
+            });
+        };
+
+        function getVideoId(url) {
+            try {
+                const parsed = new URL(url);
+
+                if (parsed.hostname === "youtu.be") {
+                    return parsed.pathname.slice(1);
+                }
+
+                if (
+                    parsed.hostname === "youtube.com" ||
+                    parsed.hostname.endsWith(".youtube.com")
+                ) {
+                    if (parsed.pathname === "/watch") {
+                        return parsed.searchParams.get("v");
+                    }
+
+                    const parts = parsed.pathname.split("/");
+                    if (["embed", "shorts"].includes(parts[1])) {
+                        return parts[2];
+                    }
+                }
+            } catch (error) {
+                // Invalid URL
+            }
+
+            return null;
+        }
+
+        function toggleVideoFullscreen() {
+            const playerContainer = document.getElementById("player");
+
+            const isExpanded =
+                playerContainer.classList.contains("player-expanded");
+
+            if (isExpanded) {
+                playerContainer.classList.remove("player-expanded");
+                showAction("Video returned to normal view");
+            } else {
+                playerContainer.classList.add("player-expanded");
+                showAction("Video expanded to fullscreen view");
+            }
+        }
+
+        function seekBy(seconds) {
+            if (!playerReady) return;
+
+            const current = player.getCurrentTime();
+            const duration = player.getDuration();
+
+            if (!Number.isFinite(current) || !Number.isFinite(duration)) {
+                return;
+            }
+
+            const target = Math.max(
+                0,
+                Math.min(duration, current + seconds)
+            );
+
+            player.seekTo(target, true);
+            showAction(
+                seconds > 0 ? "Forward 10 seconds" : "Rewind 10 seconds"
+            );
+        }
+
+        function togglePlayback() {
+            if (!playerReady) return;
+
+            const state = player.getPlayerState();
+
+            if (state === YT.PlayerState.PLAYING) {
+                player.pauseVideo();
+                showAction("Paused");
+            } else {
+                player.playVideo();
+                showAction("Play requested");
+            }
+        }
+
+        function changeVolume(delta) {
+            if (!playerReady) return;
+
+            const volume = player.getVolume();
+            const next = Math.max(0, Math.min(100, volume + delta));
+
+            player.setVolume(next);
+
+            if (next > 0) {
+                player.unMute();
+            }
+
+            showAction("Volume: " + next + "%");
+        }
+
+        function showAction(message) {
+            actionElement.textContent = message;
+        }
+
+        document.getElementById("backButton").onclick =
+            () => seekBy(-10);
+
+        document.getElementById("forwardButton").onclick =
+            () => seekBy(10);
+
+        document.getElementById("playButton").onclick =
+            togglePlayback;
+
+        document.getElementById("volumeDown").onclick =
+            () => changeVolume(-10);
+
+        document.getElementById("volumeUp").onclick =
+            () => changeVolume(10);
+
+        document.getElementById("fullscreenButton").onclick =
+            toggleVideoFullscreen;
+
+        document.getElementById("loadButton").onclick = () => {
+            const videoId = getVideoId(
+                document.getElementById("videoUrl").value.trim()
+            );
+
+            if (!videoId) {
+                showAction("Enter a valid YouTube video URL.");
+                return;
+            }
+
+            if (playerReady) {
+                player.loadVideoById(videoId);
+                showAction("Loading video...");
+            }
+        };
+
+
+        // Connect this page to the local Python WebSocket server.
+        function connectWebSocket() {
+            socket = new WebSocket("ws://127.0.0.1:8765");
+
+            socket.onopen = () => {
+                statusElement.textContent = "Connected";
+                statusElement.style.color = "#7ee787";
+            };
+
+            socket.onmessage = (event) => {
+                console.log("Gesture received by browser:", event.data);
+                try {
+                    const data = JSON.parse(event.data);
+
+                    if (data.type !== "gesture") return;
+
+
+                    switch (data.command) {
+                        case "SEEK_FORWARD":
+                            showAction("Received gesture: " + data.command);
+                            console.log("Executing command:", data.command);
+                            seekBy(10);
+                            break;
+
+                        case "SEEK_BACKWARD":
+                            showAction("Received gesture: " + data.command);
+                            console.log("Executing command:", data.command);
+                            seekBy(-10);
+                            break;
+
+                        case "VOLUME_UP":
+                            showAction("Received gesture: " + data.command);
+                            console.log("Executing command:", data.command);
+                            changeVolume(10);
+                            break;
+
+                        case "VOLUME_DOWN":
+                            showAction("Received gesture: " + data.command);
+                            console.log("Executing command:", data.command);
+                            changeVolume(-10);
+                            break;
+
+
+                        case "TOGGLE_PLAYBACK":
+                            togglePlayback();
+                            break;
+
+                        case "TOGGLE_MUTE":
+                            if (playerReady) {
+                                if (player.isMuted()) {
+                                    player.unMute();
+                                    showAction("Sound unmuted");
+                                } else {
+                                    player.mute();
+                                    showAction("Sound muted");
+                                }
+                            }
+                            break;
+
+                        case "TOGGLE_FULLSCREEN":
+                            toggleVideoFullscreen();
+                            break;
+
+                        case "TOGGLE_GESTURE_CONTROL":
+                            showAction(
+                                "Gesture control state changed in Python."
+                            );
+                            break;
+
+
+                        default:
+                            console.log("Unknown command:", data.command);
+                    }
+
+                } catch (error) {
+                    console.error("Invalid gesture message", error);
+                }
+            };
+
+            socket.onclose = () => {
+                statusElement.textContent = "Disconnected — reconnecting...";
+                statusElement.style.color = "#ffd166";
+                setTimeout(connectWebSocket, 2000);
+            };
+
+            socket.onerror = () => {
+                statusElement.textContent = "Connection error";
+            };
+        }
+
+        connectWebSocket();
+    </script>
+</body>
+
+</html>
