@@ -197,7 +197,7 @@ last_ws_attempt     = 0.0
 
 def get_websocket_connection():
     try:
-        ws = connect("ws://127.0.0.1:8765", open_timeout=1.5)
+        ws = connect("wss://gestureplay-mi0f.onrender.com", open_timeout=1.5)
         print("Connected to GesturePlay WebSocket server.")
         return ws
     except Exception as e:

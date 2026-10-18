@@ -370,7 +370,7 @@
 
         // Connect this page to the local Python WebSocket server.
         function connectWebSocket() {
-            socket = new WebSocket("ws://127.0.0.1:8765");
+            socket = new WebSocket("wss://gestureplay-mi0f.onrender.com");
 
             socket.onopen = () => {
                 statusElement.textContent = "Connected";
