@@ -4,6 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="referrer" content="strict-origin-when-cross-origin">
     <title>GesturePlay | Touchless Video Controller</title>
 
     <style>
@@ -134,7 +135,7 @@
 
         <div class="url-bar">
             <input id="videoUrl" type="text" placeholder="Paste a YouTube video URL"
-                value="https://www.youtube.com/watch?v=M7lc1UVf-VE">
+                value="https://youtu.be/DVakMNAyrlg?si=Zh0Uqlye6ORMQ8ji">
             <button id="loadButton">Load video</button>
         </div>
 
@@ -152,6 +153,7 @@
                 <button id="forwardButton">+10 seconds</button>
                 <button id="volumeDown">Volume −</button>
                 <button id="volumeUp">Volume +</button>
+                <button id="muteButton">Mute / Unmute</button>
                 <button id="fullscreenButton">Full screen</button>
             </div>
         </div>
@@ -159,9 +161,14 @@
         <div class="panel">
             <strong>Gesture guide</strong>
             <p class="hint">
-                Swipe right: forward 10 seconds<br>
-                Swipe left: rewind 10 seconds<br>
-                Use the buttons to test playback before enabling gestures.
+                ✋ Open palm &nbsp;&nbsp;&nbsp;: Play / Pause<br>
+                ✊ Closed fist &nbsp;&nbsp;: Mute / Unmute<br>
+                ☝️ Index finger : Full screen<br>
+                ✌️ Peace sign &nbsp;&nbsp;: Enable / Disable gesture control<br>
+                👍 Thumbs up &nbsp;&nbsp;&nbsp;: Volume up<br>
+                👎 Thumbs down : Volume down<br>
+                ➡️ Swipe right &nbsp;: Forward 10 seconds<br>
+                ⬅️ Swipe left &nbsp;&nbsp;: Rewind 10 seconds
             </p>
         </div>
     </div>
@@ -186,7 +193,8 @@
                     document.getElementById("videoUrl").value
                 ),
                 playerVars: {
-                    playsinline: 1
+                    playsinline: 1,
+                    origin: (window.location.protocol.startsWith("http") ? window.location.origin : "http://127.0.0.1:8080")
                 },
                 events: {
                     onReady: function () {
@@ -270,12 +278,25 @@
 
             const state = player.getPlayerState();
 
-            if (state === YT.PlayerState.PLAYING) {
+            // Handle both playing and buffering states when pausing
+            if (state === YT.PlayerState.PLAYING || state === YT.PlayerState.BUFFERING) {
                 player.pauseVideo();
                 showAction("Paused");
             } else {
                 player.playVideo();
-                showAction("Play requested");
+                showAction("Playing");
+            }
+        }
+
+        function toggleMute() {
+            if (!playerReady) return;
+
+            if (player.isMuted()) {
+                player.unMute();
+                showAction("Sound unmuted (Volume: " + player.getVolume() + "%)");
+            } else {
+                player.mute();
+                showAction("Sound MUTED");
             }
         }
 
@@ -313,8 +334,22 @@
         document.getElementById("volumeUp").onclick =
             () => changeVolume(10);
 
+        document.getElementById("muteButton").onclick =
+            toggleMute;
+
         document.getElementById("fullscreenButton").onclick =
             toggleVideoFullscreen;
+
+        // Allow Escape key to exit the custom CSS fullscreen view
+        document.addEventListener("keydown", (e) => {
+            if (e.key === "Escape") {
+                const playerContainer = document.getElementById("player");
+                if (playerContainer.classList.contains("player-expanded")) {
+                    playerContainer.classList.remove("player-expanded");
+                    showAction("Video returned to normal view");
+                }
+            }
+        });
 
         document.getElementById("loadButton").onclick = () => {
             const videoId = getVideoId(
@@ -377,19 +412,14 @@
 
 
                         case "TOGGLE_PLAYBACK":
+                            showAction("Received gesture: " + data.command);
+                            console.log("Executing command:", data.command);
                             togglePlayback();
                             break;
 
                         case "TOGGLE_MUTE":
-                            if (playerReady) {
-                                if (player.isMuted()) {
-                                    player.unMute();
-                                    showAction("Sound unmuted");
-                                } else {
-                                    player.mute();
-                                    showAction("Sound muted");
-                                }
-                            }
+                            showAction("Received gesture: " + data.command);
+                            toggleMute();
                             break;
 
                         case "TOGGLE_FULLSCREEN":

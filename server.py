@@ -1,6 +1,8 @@
-
 import asyncio
 import json
+import http.server
+import socketserver
+import threading
 import websockets
 
 clients = set()
@@ -17,9 +19,29 @@ ALLOWED_COMMANDS = {
 }
 
 
+class QuietHTTPHandler(http.server.SimpleHTTPRequestHandler):
+    """Serve files silently without flooding the terminal with HTTP GET logs."""
+    def log_message(self, format, *args):
+        pass
+
+
+def start_http_server(host="127.0.0.1", port=8080):
+    """Run a local HTTP server in a daemon thread so the browser can load YouTube without Error 153."""
+    socketserver.TCPServer.allow_reuse_address = True
+    try:
+        httpd = socketserver.TCPServer((host, port), QuietHTTPHandler)
+        thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+        thread.start()
+        print(f"GesturePlay Web Server running at: http://{host}:{port}/index.html")
+        return httpd
+    except Exception as error:
+        print(f"HTTP server note (port {port}): {error}")
+        return None
+
+
 async def handler(websocket):
     clients.add(websocket)
-    print(f"Client connected. Total: {len(clients)}")
+    print(f"Client connected. Total connected: {len(clients)}")
 
     try:
         async for message in websocket:
@@ -46,7 +68,7 @@ async def handler(websocket):
             ]
 
             if not targets:
-                print("No other client connected.")
+                print("No active browser window connected to receive gesture.")
                 continue
 
             results = await asyncio.gather(
@@ -67,7 +89,7 @@ async def handler(websocket):
                 for result in results
             )
 
-            print(f"Forwarded to {sent} client(s).")
+            print(f"Forwarded '{command}' to {sent} client(s).")
 
     except websockets.exceptions.ConnectionClosed as error:
         print("Connection closed:", error)
@@ -77,14 +99,20 @@ async def handler(websocket):
 
     finally:
         clients.discard(websocket)
-        print(f"Client disconnected. Total: {len(clients)}")
+        print(f"Client disconnected. Total connected: {len(clients)}")
 
 
 async def main():
+    start_http_server("127.0.0.1", 8080)
+
     async with websockets.serve(
-        handler, "127.0.0.1", 8765
+        handler,
+        "127.0.0.1",
+        8765,
+        ping_interval=20,   # Send a keepalive ping every 20s
+        ping_timeout=10,    # Drop client if no pong within 10s
     ):
-        print("GesturePlay server running on port 8765")
+        print("GesturePlay WebSocket Server running on ws://127.0.0.1:8765")
         await asyncio.Future()
 
 
